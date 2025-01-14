@@ -1,0 +1,22 @@
+{
+    "852206305": {
+        "id": "852206305",
+        "full_name": "Шварценберг Георгий Львович",
+        "balance": 0,
+        "completed_tasks": [
+        ],
+        "purchased": [],
+        "approved": true,
+        "blocked": false,
+        "current_task": "1"
+    },
+    "1020273241": {
+        "id": "1020273241",
+        "full_name": "Коняхина Милана Андреевна",
+        "balance": 0,
+        "completed_tasks": [],
+        "purchased": [],
+        "approved": true,
+        "blocked": false
+    }
+}
