@@ -86,24 +86,40 @@ def load_data():
             users = json.load(file)
     except FileNotFoundError:
         users = {}
+        print(f"Файл {USERS_FILE} не найден, создан пустой словарь")
+    except json.JSONDecodeError as e:
+        users = {}
+        print(f"Ошибка парсинга {USERS_FILE}: {e}, создан пустой словарь")
 
     try:
         with open(MARKET_FILE, "r", encoding="utf-8") as file:
             market = json.load(file)
     except FileNotFoundError:
-        print("Ошибка чтения файла market.json")
+        market = []
+        print(f"Файл {MARKET_FILE} не найден, создан пустой список")
+    except json.JSONDecodeError as e:
+        market = []
+        print(f"Ошибка парсинга {MARKET_FILE}: {e}, создан пустой список")
 
     try:
         with open(TASKS_FILE, "r", encoding="utf-8") as file:
             tasks = json.load(file)
     except FileNotFoundError:
-        print("Ошибка прочтения файла tasks.json")
+        tasks = {}
+        print(f"Файл {TASKS_FILE} не найден, создан пустой словарь")
+    except json.JSONDecodeError as e:
+        tasks = {}
+        print(f"Ошибка парсинга {TASKS_FILE}: {e}, создан пустой словарь")
 
     try:
         with open(SUBMISSIONS_FILE, "r", encoding="utf-8") as file:
             submissions = json.load(file)
     except FileNotFoundError:
-        print("Ошибка прочтения файла submissions.json")
+        submissions = {}
+        print(f"Файл {SUBMISSIONS_FILE} не найден, создан пустой словарь")
+    except json.JSONDecodeError as e:
+        submissions = {}
+        print(f"Ошибка парсинга {SUBMISSIONS_FILE}: {e}, создан пустой словарь")
 
 
 # Сохранение данных в JSON
@@ -1430,7 +1446,13 @@ async def cancel_edit_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     # Логгирование исключений
-    print(f"Произошла ошибка: {context.error}")
+    print(f"❌ Произошла ошибка: {context.error}")
+    import traceback
+    traceback.print_exc()
+    
+    # Если есть update, логируем информацию о нем
+    if update:
+        print(f"   Update: {update}")
 
 
 # Новая универсальная функция для обработки текстовых сообщений
@@ -1623,8 +1645,21 @@ async def handle_both_submission(update: Update, context: ContextTypes.DEFAULT_T
 
 # Главная точка входа
 def main():
-    load_data()  # Загрузка данных пользователей, магазина и заданий
-    load_admins()  # Загрузка списка администраторов
+    print("=" * 50)
+    print("Запуск Telegram бота...")
+    print("=" * 50)
+    
+    try:
+        load_data()  # Загрузка данных пользователей, магазина и заданий
+        print("✓ Данные загружены успешно")
+    except Exception as e:
+        print(f"⚠ Ошибка загрузки данных: {e}")
+    
+    try:
+        load_admins()  # Загрузка списка администраторов
+        print(f"✓ Администраторы загружены: {len(admins)} админов")
+    except Exception as e:
+        print(f"⚠ Ошибка загрузки администраторов: {e}")
 
     # Создаем цикл событий вручную
     loop = asyncio.new_event_loop()
@@ -1633,15 +1668,32 @@ def main():
     # Получаем токен из переменной окружения
     bot_token = os.getenv("BOT_TOKEN")
     if not bot_token:
+        print("❌ ОШИБКА: BOT_TOKEN environment variable is not set!")
+        print("   Установите переменную окружения BOT_TOKEN перед запуском бота.")
         raise ValueError("BOT_TOKEN environment variable is not set. Please set it before running the bot.")
     
-    app = Application.builder().token(bot_token).build()
+    print(f"✓ Токен бота получен (длина: {len(bot_token)} символов)")
+    
+    try:
+        app = Application.builder().token(bot_token).build()
+        print("✓ Приложение Telegram создано успешно")
+    except Exception as e:
+        print(f"❌ Ошибка создания приложения: {e}")
+        raise
 
-    # Очищаем панель команд перед запуском
-    loop.run_until_complete(clear_commands(app))
+    try:
+        # Очищаем панель команд перед запуском
+        loop.run_until_complete(clear_commands(app))
+        print("✓ Команды очищены")
+    except Exception as e:
+        print(f"⚠ Ошибка очистки команд: {e}")
 
-    # Устанавливаем команды перед запуском
-    loop.run_until_complete(set_bot_commands(app))
+    try:
+        # Устанавливаем команды перед запуском
+        loop.run_until_complete(set_bot_commands(app))
+        print("✓ Команды установлены")
+    except Exception as e:
+        print(f"⚠ Ошибка установки команд: {e}")
 
     # Пользовательские команды
     app.add_handler(CommandHandler("start", lambda u, c: command_wrapper(u, c, start)))
@@ -1705,7 +1757,20 @@ def main():
 
     app.add_error_handler(error_handler)
 
-    app.run_polling()
+    print("=" * 50)
+    print("Бот запущен и готов к работе!")
+    print("Ожидание сообщений...")
+    print("=" * 50)
+    
+    try:
+        app.run_polling()
+    except KeyboardInterrupt:
+        print("\n✓ Бот остановлен пользователем")
+    except Exception as e:
+        print(f"❌ Критическая ошибка при работе бота: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 if __name__ == "__main__":
