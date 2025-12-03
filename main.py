@@ -807,74 +807,201 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("У вас нет прав администратора.")
 
 
-async def check_pending_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
+def get_pending_tasks_list():
+    """Получает список всех заданий со статусом 'pending'"""
     load_data()
-
-    # Ищем все задания со статусом "pending"
     pending_tasks = []
+    
     for user_id, tasks_list in submissions.items():
-        for task in tasks_list:
+        for task_index, task in enumerate(tasks_list):
             if task["status"] == "pending":
                 user = users.get(user_id)
                 task_info = tasks.get(str(task["task_id"]))
                 if user and task_info:
                     task_data = {
                         "user_full_name": user["full_name"],
+                        "user_id": user_id,
+                        "task_id": task["task_id"],
+                        "task_index": task_index,  # Индекс в списке submissions[user_id]
                         "task_title": task_info["title"],
                         "task_description": task_info["description"],
-                        "task_text": task["text"] if task["text"] else "Нет текста",
-                        "task_photo": task["photo_path"] if task["photo_path"] else "Нет фото",
-                        "task_id": task["task_id"],
-                        "user_id": user_id
+                        "task_text": task["text"] if task["text"] else None,
+                        "task_photo": task["photo_path"] if task["photo_path"] else None,
                     }
                     pending_tasks.append(task_data)
+    
+    return pending_tasks
 
+
+async def show_task_for_review(update: Update, context: ContextTypes.DEFAULT_TYPE, task_index: int = 0):
+    """Показывает задание для проверки с навигацией"""
+    query = update.callback_query
+    if query:
+        await query.answer()
+    
+    # Получаем список заданий
+    pending_tasks = get_pending_tasks_list()
+    
     if not pending_tasks:
-        await query.edit_message_text("Нет заданий на проверку.")
+        message_text = "Нет заданий на проверку."
+        if query:
+            await query.edit_message_text(message_text)
+        else:
+            await update.message.reply_text(message_text)
         return
-
-    # Отправляем карточки с заданиями
-    for task in pending_tasks:
-        keyboard = [
-            [InlineKeyboardButton("Принять", callback_data=f"accept_{task['task_id']}"),
-             InlineKeyboardButton("Отклонить", callback_data=f"reject_{task['task_id']}")]
-        ]
-
-        task_card = (
-            f"Задание: {task['task_title']}\n"
-            f"Отправлено пользователем: {task['user_full_name']}\n"
-            f"Описание: {task['task_description']}\n"
-            f"Текст задания: {task['task_text']}\n"
-            f"Фото: {task['task_photo'] if task['task_photo'] != 'Нет фото' else 'Нет'}"
-        )
-
-        # Если есть фото, отправляем его
-        if task['task_photo'] != "Нет фото":
-            image_path = os.path.join(os.getcwd(), task['task_photo'])
-            if os.path.exists(image_path):
-                with open(image_path, 'rb') as photo:
+    
+    # Сохраняем список заданий в context для навигации
+    context.user_data['pending_tasks'] = pending_tasks
+    context.user_data['current_task_index'] = task_index
+    
+    # Получаем текущее задание
+    if task_index >= len(pending_tasks):
+        task_index = 0
+    if task_index < 0:
+        task_index = len(pending_tasks) - 1
+    
+    task = pending_tasks[task_index]
+    context.user_data['current_task_index'] = task_index
+    
+    # Формируем текст сообщения
+    task_card = (
+        f"📋 <b>Задание #{task['task_id']}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 <b>Пользователь:</b> {task['user_full_name']}\n"
+        f"📝 <b>Название:</b> {task['task_title']}\n"
+        f"📄 <b>Описание:</b> {task['task_description']}\n"
+    )
+    
+    if task['task_text']:
+        task_card += f"💬 <b>Текст выполнения:</b>\n{task['task_text']}\n"
+    
+    task_card += f"\n📊 <b>Задание {task_index + 1} из {len(pending_tasks)}</b>"
+    
+    # Создаем клавиатуру с навигацией
+    keyboard_buttons = []
+    
+    # Кнопки навигации
+    nav_row = []
+    if len(pending_tasks) > 1:
+        if task_index > 0:
+            nav_row.append(InlineKeyboardButton("◀️ Предыдущее", callback_data=f"task_nav_{task_index - 1}"))
+        if task_index < len(pending_tasks) - 1:
+            nav_row.append(InlineKeyboardButton("Следующее ▶️", callback_data=f"task_nav_{task_index + 1}"))
+        if nav_row:
+            keyboard_buttons.append(nav_row)
+    
+    # Кнопки принятия/отклонения
+    action_row = [
+        InlineKeyboardButton("✅ Принять", callback_data=f"task_accept_{task['user_id']}_{task['task_index']}"),
+        InlineKeyboardButton("❌ Отклонить", callback_data=f"task_reject_{task['user_id']}_{task['task_index']}")
+    ]
+    keyboard_buttons.append(action_row)
+    
+    keyboard = InlineKeyboardMarkup(keyboard_buttons)
+    
+    # Отправляем сообщение с фото или без
+    try:
+        photo_path = task['task_photo']
+        # Проверяем относительный и абсолютный пути
+        if photo_path:
+            if not os.path.isabs(photo_path):
+                photo_path = os.path.join(os.getcwd(), photo_path)
+        
+        if task['task_photo'] and os.path.exists(photo_path):
+            with open(photo_path, 'rb') as photo:
+                if query:
+                    try:
+                        await query.message.delete()  # Удаляем старое сообщение
+                    except:
+                        pass  # Игнорируем ошибку, если сообщение уже удалено
                     await context.bot.send_photo(
                         chat_id=update.effective_chat.id,
                         photo=photo,
                         caption=task_card,
-                        reply_markup=InlineKeyboardMarkup(keyboard)
+                        reply_markup=keyboard,
+                        parse_mode='HTML'
+                    )
+                else:
+                    await context.bot.send_photo(
+                        chat_id=update.effective_chat.id,
+                        photo=photo,
+                        caption=task_card,
+                        reply_markup=keyboard,
+                        parse_mode='HTML'
+                    )
+        else:
+            if task['task_photo']:
+                task_card += "\n\n⚠️ Фото не найдено по указанному пути."
+            
+            if query:
+                try:
+                    await query.edit_message_text(
+                        task_card,
+                        reply_markup=keyboard,
+                        parse_mode='HTML'
+                    )
+                except:
+                    # Если не удалось отредактировать, отправляем новое сообщение
+                    try:
+                        await query.message.delete()
+                    except:
+                        pass
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=task_card,
+                        reply_markup=keyboard,
+                        parse_mode='HTML'
                     )
             else:
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
-                    text=f"{task_card}\n⚠️ Фото не найдено по указанному пути.",
-                    reply_markup=InlineKeyboardMarkup(keyboard)
+                    text=task_card,
+                    reply_markup=keyboard,
+                    parse_mode='HTML'
+                )
+    except Exception as e:
+        print(f"Ошибка при отправке задания: {e}")
+        import traceback
+        traceback.print_exc()
+        # Если не удалось отправить с фото, отправляем без фото
+        if query:
+            try:
+                await query.edit_message_text(
+                    task_card + "\n\n⚠️ Ошибка загрузки фото.",
+                    reply_markup=keyboard,
+                    parse_mode='HTML'
+                )
+            except:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=task_card + "\n\n⚠️ Ошибка загрузки фото.",
+                    reply_markup=keyboard,
+                    parse_mode='HTML'
                 )
         else:
-            # Если фото нет, отправляем только текст
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text=task_card,
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                text=task_card + "\n\n⚠️ Ошибка загрузки фото.",
+                reply_markup=keyboard,
+                parse_mode='HTML'
             )
+
+
+async def check_pending_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начало проверки заданий - показывает первое задание"""
+    await show_task_for_review(update, context, task_index=0)
+
+
+async def handle_task_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка навигации между заданиями"""
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    # Формат: task_nav_{index}
+    task_index = int(data.split("_")[-1])
+    
+    await show_task_for_review(update, context, task_index=task_index)
 
 
 # Загрузочные функции (пример):
@@ -891,34 +1018,38 @@ def load_tasks():
 
 
 async def handle_task_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка принятия/отклонения задания администратором"""
     query = update.callback_query
-    await query.answer()  # Подтверждаем нажатие кнопки
+    await query.answer()
 
     data = query.data
-    action, task_id = data.split("_")  # Разделяем данные (accept или reject и task_id)
+    # Формат: task_accept_{user_id}_{task_index} или task_reject_{user_id}_{task_index}
+    parts = data.split("_")
+    action = parts[1]  # accept или reject
+    user_id = parts[2]
+    task_index = int(parts[3])
 
-    # Идентификатор администратора, который нажал на кнопку
-    admin_id = str(update.effective_chat.id)
+    # Загружаем актуальные данные
+    load_data()
 
-    # Найдем пользователя и задание
-    task = None
-    user_id = None
+    # Получаем задание из submissions
+    if user_id not in submissions:
+        await query.message.reply_text("Пользователь не найден.")
+        return
 
-    # Логгирование данных для диагностики
-    print(f"Администратор {admin_id} обрабатывает действие {action} для задания {task_id}")
+    tasks_list = submissions[user_id]
+    if task_index >= len(tasks_list):
+        await query.message.reply_text("Задание не найдено.")
+        return
 
-    for uid, tasks_list in submissions.items():
-        for t in tasks_list:
-            if t["task_id"] == task_id and t["status"] == "pending":
-                task = t
-                user_id = uid
-                break
-        if task:
-            break
+    task = tasks_list[task_index]
 
-    # Если задание не найдено
-    if task is None:
-        await query.message.reply_text("Задание не найдено или уже обработано.")
+    # Проверяем, что задание еще на проверке
+    if task["status"] != "pending":
+        await query.message.reply_text("Задание уже обработано.")
+        # Показываем следующее задание
+        current_index = context.user_data.get('current_task_index', 0)
+        await show_task_for_review(update, context, task_index=current_index)
         return
 
     # Загружаем данные пользователя
@@ -927,8 +1058,8 @@ async def handle_task_response(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.message.reply_text("Пользователь не найден.")
         return
 
-    # Логгирование для проверки данных пользователя
-    print(f"Обрабатывается пользователь с ID {user_id}: {user}")
+    task_id = str(task["task_id"])
+    task_info = tasks.get(task_id, {})
 
     if action == "accept":
         task["status"] = "accepted"
@@ -939,7 +1070,6 @@ async def handle_task_response(update: Update, context: ContextTypes.DEFAULT_TYP
             user["completed_tasks"].append(task_id)
 
             # Загружаем информацию о задании для получения награды
-            task_info = tasks.get(task_id, {})
             points = task_info.get("reward", 0)  # По умолчанию 0 баллов
             user["balance"] += points
 
@@ -947,7 +1077,7 @@ async def handle_task_response(update: Update, context: ContextTypes.DEFAULT_TYP
             try:
                 await context.bot.send_message(
                     chat_id=int(user_id),
-                    text=f"Ваше задание '{task_info.get('title', 'Задание')}' принято. Вам начислено {points} баллов!"
+                    text=f"✅ Ваше задание '{task_info.get('title', 'Задание')}' принято. Вам начислено {points} баллов!"
                 )
             except Exception as e:
                 print(f"Ошибка при отправке сообщения пользователю {user_id}: {e}")
@@ -960,7 +1090,7 @@ async def handle_task_response(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             await context.bot.send_message(
                 chat_id=int(user_id),
-                text=f"Ваше задание '{task_id}' отклонено. Комментарий администратора: {task['admin_comment']}"
+                text=f"❌ Ваше задание '{task_info.get('title', 'Задание')}' отклонено. Комментарий администратора: {task['admin_comment']}"
             )
         except Exception as e:
             print(f"Ошибка при отправке сообщения пользователю {user_id}: {e}")
@@ -969,13 +1099,28 @@ async def handle_task_response(update: Update, context: ContextTypes.DEFAULT_TYP
     save_json("submissions.json", submissions)
     save_json("users.json", users)
 
-    # Обновляем сообщение администратора
-    try:
-        await query.edit_message_text(
-            f"Задание {task_id} {'принято' if action == 'accept' else 'отклонено'}."
-        )
-    except Exception as e:
-        print(f"Ошибка редактирования сообщения администратора: {e}")
+    # Обновляем список заданий и показываем следующее
+    pending_tasks = get_pending_tasks_list()
+    
+    if not pending_tasks:
+        # Если заданий больше нет
+        try:
+            await query.edit_message_text(
+                "✅ Задание обработано.\n\nНет больше заданий на проверку.",
+                parse_mode='HTML'
+            )
+        except:
+            await query.message.reply_text(
+                "✅ Задание обработано.\n\nНет больше заданий на проверку.",
+                parse_mode='HTML'
+            )
+    else:
+        # Показываем то же задание по индексу (или первое, если индекс стал невалидным)
+        current_index = context.user_data.get('current_task_index', 0)
+        # Если текущее задание было удалено, показываем первое доступное
+        if current_index >= len(pending_tasks):
+            current_index = 0
+        await show_task_for_review(update, context, task_index=current_index)
 
 
 async def notify_user_of_task_status(update: Update, context: ContextTypes.DEFAULT_TYPE, task_id: str, status: str):
@@ -1748,7 +1893,11 @@ def main():
 
     app.add_handler(CallbackQueryHandler(handle_registration_response, pattern=r"^(prinyat|decline)_\d+$"))
 
-    app.add_handler(CallbackQueryHandler(handle_task_response, pattern=r"^(accept|reject)_\d+$"))
+    # Обработчик навигации между заданиями
+    app.add_handler(CallbackQueryHandler(handle_task_navigation, pattern=r"^task_nav_\d+$"))
+    
+    # Обработчик принятия/отклонения заданий (новый формат)
+    app.add_handler(CallbackQueryHandler(handle_task_response, pattern=r"^task_(accept|reject)_\d+_\d+$"))
 
     app.add_handler(CallbackQueryHandler(handle_market_button))
 
