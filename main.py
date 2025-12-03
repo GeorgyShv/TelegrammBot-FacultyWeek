@@ -1630,7 +1630,12 @@ def main():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    app = Application.builder().token("8042651104:AAEyG8aQj-fzTSUxo7GIhAy6Ab4Ue0oTpe0").build()
+    # Получаем токен из переменной окружения
+    bot_token = os.getenv("BOT_TOKEN")
+    if not bot_token:
+        raise ValueError("BOT_TOKEN environment variable is not set. Please set it before running the bot.")
+    
+    app = Application.builder().token(bot_token).build()
 
     # Очищаем панель команд перед запуском
     loop.run_until_complete(clear_commands(app))

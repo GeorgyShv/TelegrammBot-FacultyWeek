@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Данные (опционально, если хотите сохранять данные вне контейнера)
+# users.json
+# tasks.json
+# market.json
+# admins.json
+# submissions.json
+# uploads/
+# images/
+
+# Другое
+*.log
+.DS_Store
+README.md
+
