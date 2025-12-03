@@ -872,8 +872,17 @@ async def show_task_for_review(update: Update, context: ContextTypes.DEFAULT_TYP
         f"📄 <b>Описание:</b> {task['task_description']}\n"
     )
     
+    # Добавляем текст выполнения, если он есть
     if task['task_text']:
-        task_card += f"💬 <b>Текст выполнения:</b>\n{task['task_text']}\n"
+        task_card += f"\n💬 <b>Текст выполнения:</b>\n{task['task_text']}\n"
+    else:
+        task_card += f"\n💬 <b>Текст выполнения:</b> не предоставлен\n"
+    
+    # Добавляем информацию о фото
+    if task['task_photo']:
+        task_card += f"📷 <b>Фото:</b> приложено\n"
+    else:
+        task_card += f"📷 <b>Фото:</b> не требуется/не предоставлено\n"
     
     task_card += f"\n📊 <b>Задание {task_index + 1} из {len(pending_tasks)}</b>"
     
@@ -901,13 +910,20 @@ async def show_task_for_review(update: Update, context: ContextTypes.DEFAULT_TYP
     
     # Отправляем сообщение с фото или без
     try:
-        photo_path = task['task_photo']
-        # Проверяем относительный и абсолютный пути
-        if photo_path:
+        # Проверяем наличие фото
+        has_photo = False
+        photo_path = None
+        
+        if task['task_photo']:
+            photo_path = task['task_photo']
+            # Проверяем относительный и абсолютный пути
             if not os.path.isabs(photo_path):
                 photo_path = os.path.join(os.getcwd(), photo_path)
+            
+            if os.path.exists(photo_path):
+                has_photo = True
         
-        if task['task_photo'] and os.path.exists(photo_path):
+        if has_photo:
             with open(photo_path, 'rb') as photo:
                 if query:
                     try:
